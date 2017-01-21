@@ -26,12 +26,18 @@
 
 #include<ros/ros.h>
 #include <cv_bridge/cv_bridge.h>
+#include <tf/transform_datatypes.h>
+#include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include<opencv2/core/core.hpp>
 
 #include"../../../include/System.h"
 
 using namespace std;
+
+ros::Publisher pose_pub_;
 
 class ImageGrabber
 {
@@ -63,6 +69,7 @@ int main(int argc, char **argv)
     ros::NodeHandle nodeHandler;
     ros::Subscriber sub = nodeHandler.subscribe("/camera/image_raw", 1, &ImageGrabber::GrabImage,&igb);
 
+    pose_pub_ = nodeHandler.advertise<geometry_msgs::PoseWithCovarianceStamped>("camera_pose", 1);
     ros::spin();
 
     // Stop all threads
@@ -90,7 +97,43 @@ void ImageGrabber::GrabImage(const sensor_msgs::ImageConstPtr& msg)
         return;
     }
 
-    mpSLAM->TrackMonocular(cv_ptr->image,cv_ptr->header.stamp.toSec());
+    cv::Mat pose = mpSLAM->TrackMonocular(cv_ptr->image,cv_ptr->header.stamp.toSec());
+
+    if (pose.empty())
+        return;
+
+    // transform into right handed camera frame
+    tf::Matrix3x3 rh_cameraPose(  - pose.at<float>(0,0),   pose.at<float>(0,1),   pose.at<float>(0,2),
+                                  - pose.at<float>(1,0),   pose.at<float>(1,1),   pose.at<float>(1,2),
+                                    pose.at<float>(2,0), - pose.at<float>(2,1), - pose.at<float>(2,2));
+
+    tf::Vector3 rh_cameraTranslation( pose.at<float>(0,3),pose.at<float>(1,3), - pose.at<float>(2,3) );
+
+    //rotate 270deg about z and 270deg about x
+    tf::Matrix3x3 rotation270degZX( 0, 0, 1,
+                                   -1, 0, 0,
+                                    0,-1, 0);
+
+    //publish right handed, x forward, y right, z down (NED)
+    //static tf::TransformBroadcaster br;
+    //tf::Transform transformCoordSystem = tf::Transform(rotation270degZX,tf::Vector3(0.0, 0.0, 0.0));
+    //br.sendTransform(tf::StampedTransform(transformCoordSystem, ros::Time::now(), "camera_link", "camera_pose"));
+//
+    //tf::Transform transformCamera = tf::Transform(rh_cameraPose,rh_cameraTranslation);
+    //br.sendTransform(tf::StampedTransform(transformCamera, ros::Time::now(), "camera_pose", "pose"));
+
+    geometry_msgs::PoseWithCovarianceStamped camera_pose;
+    camera_pose.pose.pose.position.x = pose.at<float>(0,3);
+    camera_pose.pose.pose.position.y = pose.at<float>(1,3);
+    camera_pose.pose.pose.position.z = pose.at<float>(2,3);
+    tf::Quaternion q;
+    rh_cameraPose.getRotation(q);
+    camera_pose.pose.pose.orientation.x = q.getX();
+    camera_pose.pose.pose.orientation.y = q.getY();
+    camera_pose.pose.pose.orientation.z = q.getZ();
+    camera_pose.pose.pose.orientation.w = q.getW();
+
+    pose_pub_.publish(camera_pose);
 }
 
 
