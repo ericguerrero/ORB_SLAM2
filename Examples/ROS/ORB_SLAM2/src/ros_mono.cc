@@ -123,6 +123,8 @@ void ImageGrabber::GrabImage(const sensor_msgs::ImageConstPtr& msg)
     //br.sendTransform(tf::StampedTransform(transformCamera, ros::Time::now(), "camera_pose", "pose"));
 
     geometry_msgs::PoseWithCovarianceStamped camera_pose;
+    camera_pose.header.stamp = ros::Time().now();
+    camera_pose.header.frame_id = 'map';
     camera_pose.pose.pose.position.x = pose.at<float>(0,3);
     camera_pose.pose.pose.position.y = pose.at<float>(1,3);
     camera_pose.pose.pose.position.z = pose.at<float>(2,3);
